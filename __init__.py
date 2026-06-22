@@ -1334,8 +1334,8 @@ class ImportModalOperator(bpy.types.Operator):
         # Prefer EEVEE_NEXT if available (Blender 4.0+)
         target_engine = "BLENDER_EEVEE_NEXT" if "BLENDER_EEVEE_NEXT" in available_engines else "BLENDER_EEVEE"
 
-        # If current engine is not acceptable, switch it
-        if bpy.context.scene.render.engine not in ["CYCLES", target_engine]:
+        # If current engine is not acceptable, switch it (leave Workbench alone)
+        if bpy.context.scene.render.engine not in ["CYCLES", "BLENDER_WORKBENCH", target_engine]:
             bpy.context.scene.render.engine = target_engine
 
         try:

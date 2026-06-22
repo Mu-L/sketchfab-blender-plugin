@@ -2220,15 +2220,33 @@ def updateCacheDirectory(self, context):
     # Delete the old directory
     # Won't delete anything upon plugin intialization, only when switching path in preferences
     if Config.SKETCHFAB_TEMP_DIR and os.path.exists(Config.SKETCHFAB_TEMP_DIR) and os.path.isdir(Config.SKETCHFAB_TEMP_DIR):
-        shutil.rmtree(Config.SKETCHFAB_TEMP_DIR)
+        try:
+            shutil.rmtree(Config.SKETCHFAB_TEMP_DIR)
+        except OSError as err:
+            print("Sketchfab: could not remove old cache directory '{}': {}".format(Config.SKETCHFAB_TEMP_DIR, err))
 
-    # Create the paths and directories for temporary directories
-    Config.SKETCHFAB_TEMP_DIR = os.path.join(path, "sketchfab_downloads")
-    Config.SKETCHFAB_THUMB_DIR = os.path.join(Config.SKETCHFAB_TEMP_DIR, 'thumbnails')
-    Config.SKETCHFAB_MODEL_DIR = os.path.join(Config.SKETCHFAB_TEMP_DIR, 'imports')
-    if not os.path.exists(Config.SKETCHFAB_TEMP_DIR): os.makedirs(Config.SKETCHFAB_TEMP_DIR)
-    if not os.path.exists(Config.SKETCHFAB_THUMB_DIR): os.makedirs(Config.SKETCHFAB_THUMB_DIR)
-    if not os.path.exists(Config.SKETCHFAB_MODEL_DIR): os.makedirs(Config.SKETCHFAB_MODEL_DIR)
+    # Create the temporary directories. If the configured path can't be created
+    # (missing drive, permission denied, unusual characters, ...) fall back to the
+    # system temp directory so that enabling the add-on never fails because of it.
+    for candidate in (path, tempfile.gettempdir()):
+        temp_dir  = os.path.join(candidate, "sketchfab_downloads")
+        thumb_dir = os.path.join(temp_dir, 'thumbnails')
+        model_dir = os.path.join(temp_dir, 'imports')
+        try:
+            os.makedirs(thumb_dir, exist_ok=True)
+            os.makedirs(model_dir, exist_ok=True)
+        except OSError as err:
+            print("Sketchfab: cannot use cache directory '{}': {}".format(candidate, err))
+            continue
+        Config.SKETCHFAB_TEMP_DIR  = temp_dir
+        Config.SKETCHFAB_THUMB_DIR = thumb_dir
+        Config.SKETCHFAB_MODEL_DIR = model_dir
+        return
+
+    # Both the configured path and the system temp directory failed: keep the
+    # add-on enabled rather than raising, and let the user set a writable folder.
+    print("Sketchfab: failed to create a cache directory; downloads may not work "
+          "until a writable Cache folder is set in the add-on preferences.")
 
 class SketchfabAddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __name__
@@ -2335,8 +2353,12 @@ def register():
                 type=SketchfabExportProps,
                 )
 
-    # If a cache path was set in preferences, use it
-    updateCacheDirectory(None, context=bpy.context)
+    # If a cache path was set in preferences, use it. Never let cache setup
+    # abort registration, otherwise the add-on fails to enable entirely.
+    try:
+        updateCacheDirectory(None, context=bpy.context)
+    except Exception as err:
+        print("Sketchfab: failed to initialize cache directory during registration: {}".format(err))
 
 class SF_Attributions:
 

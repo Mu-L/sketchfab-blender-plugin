@@ -1743,7 +1743,10 @@ def clear_search():
     skfb.has_loaded_thumbnails = False
     skfb.search_results.clear()
     skfb.custom_icons.clear()
-    bpy.data.window_managers['WinMan']['result_previews'] = 0
+    # Reset the previews enum without assuming the window manager is named "WinMan"
+    # (it isn't in headless/background sessions, which raised a KeyError here).
+    for wm in bpy.data.window_managers:
+        wm['result_previews'] = 0
 
 
 class SketchfabSearch(bpy.types.Operator):

@@ -418,7 +418,6 @@ class SketchfabApi:
         self.access_token = ''
         self.api_token = ''
         self.headers = {}
-        Cache.delete_key('username')
         Cache.delete_key('access_token')
         Cache.delete_key('api_token')
         Cache.delete_key('key')
@@ -738,40 +737,10 @@ class SketchfabApi:
         return
 
 class SketchfabLoginProps(bpy.types.PropertyGroup):
-    def update_tr(self, context):
-        self.status = ''
-        if self.email != self.last_username or self.password != self.last_password:
-            self.last_username = self.email
-            self.last_password = self.password
-            if not self.password:
-                set_login_status('ERROR', 'Password is empty')
-            bpy.ops.wm.sketchfab_login('EXEC_DEFAULT')
-
-
-    email : StringProperty(
-        name="email",
-        description="User email",
-        default=""
-    )
-
     api_token : StringProperty(
         name="API Token",
-        description="User API Token",
+        description="User API Token — get it from https://sketchfab.com/settings/password",
         default=""
-    )
-
-    use_mail : BoolProperty(
-            name="Use mail / password",
-            description="Use mail/password login or API Token",
-            default=True,
-    )
-
-    password : StringProperty(
-        name="password",
-        description="User password",
-        subtype='PASSWORD',
-        default="",
-        update=update_tr
     )
 
     access_token : StringProperty(
@@ -1308,27 +1277,6 @@ class LoginModal(bpy.types.Operator):
     def execute(self, context):
         return {'FINISHED'}
 
-    def handle_mail_login(self, r, *args, **kwargs):
-        browser_props = get_sketchfab_props()
-        if r.status_code == 200 and 'access_token' in r.json():
-            browser_props.skfb_api.access_token = r.json()['access_token']
-            login_props = get_sketchfab_login_props()
-            Cache.save_key('username', login_props.email)
-            Cache.save_key('access_token', browser_props.skfb_api.access_token)
-
-            browser_props.skfb_api.build_headers()
-            set_login_status('INFO', '')
-            browser_props.skfb_api.request_user_info()
-
-        else:
-            if 'error_description' in r.json():
-                set_login_status('ERROR', 'Failed to authenticate: bad login/password')
-            else:
-                set_login_status('ERROR', 'Failed to authenticate: bad login/password')
-                print('Cannot login.\n {}'.format(r.json()))
-
-        self.is_logging = False
-
     def handle_token_login(self, api_token):
         browser_props = get_sketchfab_props()
         browser_props.skfb_api.api_token = api_token
@@ -1357,16 +1305,7 @@ class LoginModal(bpy.types.Operator):
         try:
             context.window_manager.modal_handler_add(self)
             login_props = get_sketchfab_login_props()
-            if(login_props.use_mail):
-                data = {
-                    'grant_type': 'password',
-                    'client_id': Config.CLIENTID,
-                    'username': login_props.email,
-                    'password': login_props.password,
-                }
-                requests.post(Config.SKETCHFAB_OAUTH, data=data, hooks={'response': self.handle_mail_login})
-            else:
-                self.handle_token_login(login_props.api_token)
+            self.handle_token_login(login_props.api_token)
         except Exception as e:
             self.error = True
             self.error_message = str(e)
@@ -1479,14 +1418,9 @@ class LoginPanel(View3DPanel, bpy.types.Panel):
                     layout.prop(skfb_login, 'status', icon=skfb_login.status_type)
             else:
                 layout.label(text="Login to your Sketchfab account", icon='INFO')
-                layout.prop(skfb_login, "use_mail")
-                if skfb_login.use_mail:
-                    layout.prop(skfb_login, "email")
-                    layout.prop(skfb_login, "password")
-                else:
-                    layout.prop(skfb_login, "api_token")
+                layout.prop(skfb_login, "api_token")
+                layout.operator("wm.url_open", text='Get API token', icon='URL').url = "https://sketchfab.com/settings/password"
                 ops_row = layout.row()
-                ops_row.operator('wm.sketchfab_signup', text='Create an account', icon='PLUS')
                 login_icon = "LINKED" if bpy.app.version < (2,80,0) else "USER"
                 ops_row.operator('wm.sketchfab_login', text='Log in', icon=login_icon).authenticate = True
                 if skfb_login.status:
@@ -1726,11 +1660,9 @@ class SketchfabLogger(bpy.types.Operator):
         set_login_status('FILE_REFRESH', 'Login to your Sketchfab account...')
         wm = context.window_manager
         if self.authenticate:
-            wm.sketchfab_browser.skfb_api.login(wm.sketchfab_api.email, wm.sketchfab_api.password, wm.sketchfab_api.api_token)
+            wm.sketchfab_browser.skfb_api.login(None, None, wm.sketchfab_api.api_token)
         else:
             wm.sketchfab_browser.skfb_api.logout()
-            wm.sketchfab_api.password = ''
-            wm.sketchfab_api.last_password = "default"
             set_login_status('FILE_REFRESH', '')
         return {'FINISHED'}
 
@@ -1905,19 +1837,10 @@ def activate_plugin():
 
     # Fill login/access_token
     cache_data = Cache.read()
-    if 'username' in cache_data:
-        login.email = cache_data['username']
-
-    if 'access_token' in cache_data:
-        props.skfb_api.access_token = cache_data['access_token']
-        props.skfb_api.build_headers()
-        props.skfb_api.request_user_info()
-        props.skfb_api.use_mail = True
-    elif 'api_token' in cache_data:
+    if 'api_token' in cache_data:
         props.skfb_api.api_token = cache_data['api_token']
         props.skfb_api.build_headers()
         props.skfb_api.request_user_info()
-        props.skfb_api.use_mail = False
 
     global is_plugin_enabled
     is_plugin_enabled = True
